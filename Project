@@ -1,0 +1,17 @@
+public class NFA {
+    private String id;
+    private Set<State> states = new HashSet<>();
+    private List<Transition> transitions = new ArrayList<>();}
+public class State {
+    private String name;
+    private boolean isStart;
+    private boolean isAccept;}
+public class Transition {
+    private State from;
+    private State to;
+    private String symbol;}
+import java.util.*;
+
+public class NFAConsole {
+    private final Map<String, NFA> automata = new HashMap<>();
+    private final Scanner scanner = new Scanner(System.in);}
