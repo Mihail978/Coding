@@ -1,17 +1,176 @@
-public class NFA {
-    private String id;
-    private Set<State> states = new HashSet<>();
-    private List<Transition> transitions = new ArrayList<>();}
-public class State {
-    private String name;
-    private boolean isStart;
-    private boolean isAccept;}
-public class Transition {
-    private State from;
-    private State to;
-    private String symbol;}
 import java.util.*;
 
-public class NFAConsole {
-    private final Map<String, NFA> automata = new HashMap<>();
-    private final Scanner scanner = new Scanner(System.in);}
+public class NFA {
+    private Set<Integer> states;
+    private Set<Character> alphabet;
+    private Map<Integer, Map<Character, Set<Integer>>> transitions;
+    private int startState;
+    private Set<Integer> acceptStates;
+    private String id;
+
+    public NFA(String id) {
+        this.id = id;
+        this.states = new HashSet<Integer>();
+        this.alphabet = new HashSet<Character>();
+        this.transitions = new HashMap<Integer, Map<Character, Set<Integer>>>();
+        this.acceptStates = new HashSet<Integer>();
+    }
+
+    public void addState(int state) {
+        states.add(state);
+        if (!transitions.containsKey(state)) {
+            transitions.put(state, new HashMap<Character, Set<Integer>>());
+        }
+    }
+
+    public void addTransition(int from, char symbol, int to) {
+        alphabet.add(symbol);
+        if (!transitions.containsKey(from)) {
+            transitions.put(from, new HashMap<Character, Set<Integer>>());
+        }
+        if (!transitions.get(from).containsKey(symbol)) {
+            transitions.get(from).put(symbol, new HashSet<Integer>());
+        }
+        transitions.get(from).get(symbol).add(to);
+    }
+
+
+
+
+
+import java.util.*;
+
+public class NFAOperations {
+    public static NFA union(NFA a1, NFA a2, String newId) {
+        NFA result = new NFA(newId);
+        int offset = Collections.max(a1.getStates()) + 1;
+
+        for (int s : a1.getStates()) result.addState(s);
+        for (int s : a2.getStates()) result.addState(s + offset);
+
+        Map<Integer, Map<Character, Set<Integer>>> t1 = a1.getTransitions();
+        Map<Integer, Map<Character, Set<Integer>>> t2 = a2.getTransitions();
+
+        for (Integer from : t1.keySet()) {
+            for (Character symbol : t1.get(from).keySet()) {
+                for (Integer to : t1.get(from).get(symbol)) {
+                    result.addTransition(from, symbol, to);
+                }
+            }
+        }
+
+        for (Integer from : t2.keySet()) {
+            for (Character symbol : t2.get(from).keySet()) {
+                for (Integer to : t2.get(from).get(symbol)) {
+                    result.addTransition(from + offset, symbol, to + offset);
+                }
+            }
+        }
+
+        int newStart = Collections.max(result.getStates()) + 1;
+        result.addState(newStart);
+        result.setStartState(newStart);
+        result.addTransition(newStart, 'e', a1.getStartState());
+        result.addTransition(newStart, 'e', a2.getStartState() + offset);
+
+        for (int a : a1.getAcceptStates()) result.addAcceptState(a);
+        for (int a : a2.getAcceptStates()) result.addAcceptState(a + offset);
+
+        return result;
+    }
+
+
+
+
+import java.io.*;
+import java.util.*;
+
+public class NFAFileManager {
+
+    public static void saveToFile(NFA nfa, String filename) throws IOException {
+        PrintWriter writer = new PrintWriter(new FileWriter(filename));
+        writer.println(nfa.getId());
+        writer.println(nfa.getStartState());
+
+        StringBuilder accept = new StringBuilder();
+        for (int state : nfa.getAcceptStates()) {
+            accept.append(state).append(",");
+        }
+        if (accept.length() > 0) {
+            accept.setLength(accept.length() - 1); 
+        }
+        writer.println(accept.toString());
+
+        Map<Integer, Map<Character, Set<Integer>>> transitions = nfa.getTransitions();
+        for (Integer from : transitions.keySet()) {
+            for (Character symbol : transitions.get(from).keySet()) {
+                for (Integer to : transitions.get(from).get(symbol)) {
+                    writer.println(from + "," + symbol + "," + to);
+                }
+            }
+        }
+
+        writer.close();
+    }
+
+    public static NFA loadFromFile(String filename) throws IOException {
+        BufferedReader reader = new BufferedReader(new FileReader(filename));
+        String id = reader.readLine();
+        int start = Integer.parseInt(reader.readLine());
+        String[] acceptStatesLine = reader.readLine().split(",");
+
+        NFA nfa = new NFA(id);
+        nfa.setStartState(start);
+        for (String stateStr : acceptStatesLine) {
+            if (!stateStr.trim().isEmpty()) {
+                nfa.addAcceptState(Integer.parseInt(stateStr.trim()));
+            }
+        }
+
+        String line;
+        while ((line = reader.readLine()) != null) {
+            String[] parts = line.split(",");
+            if (parts.length == 3) {
+                int from = Integer.parseInt(parts[0]);
+                char symbol = parts[1].charAt(0);
+                int to = Integer.parseInt(parts[2]);
+                nfa.addTransition(from, symbol, to);
+            }
+        }
+
+        reader.close();
+        return nfa;
+    }
+}
+
+
+
+import java.util.*;
+import java.io.*;
+
+public class CommandHandler {
+    private Map<String, NFA> automata;
+    private Scanner scanner;
+
+    public CommandHandler() {
+        this.automata = new HashMap<String, NFA>();
+        this.scanner = new Scanner(System.in);
+    }
+
+    public void run() {
+        System.out.println("Welcome! Enter a command (or 'exit' to exit)\n:");
+        while (true) {
+            System.out.print("> ");
+            String input = scanner.nextLine().trim();
+            if (input.isEmpty()) continue;
+
+            String[] tokens = input.split(" ");
+            String command = tokens[0];
+
+
+
+
+
+
+
+
