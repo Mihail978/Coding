@@ -32,7 +32,86 @@ public class NFA {
             transitions.get(from).put(symbol, new HashSet<Integer>());
         }
         transitions.get(from).get(symbol).add(to);
+    } public void setStartState(int state) {
+        startState = state;
+        addState(state);
     }
+
+    public void addAcceptState(int state) {
+        acceptStates.add(state);
+        addState(state);
+    }
+
+    public boolean isEmpty() {
+        return !recognizeRecursive(startState, "", 0, new HashSet<String>());
+    }
+
+    public boolean isDeterministic() {
+        for (Map<Character, Set<Integer>> map : transitions.values()) {
+            for (Set<Integer> targets : map.values()) {
+                if (targets.size() > 1) return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean recognize(String word) {
+        return recognizeRecursive(startState, word, 0, new HashSet<String>());
+    }
+
+    private boolean recognizeRecursive(int currentState, String word, int index, Set<String> visited) {
+        String key = currentState + ":" + index;
+        if (visited.contains(key)) return false;
+        visited.add(key);
+
+        if (index == word.length()) {
+            if (acceptStates.contains(currentState)) return true;
+            if (transitions.containsKey(currentState) && transitions.get(currentState).containsKey('e')) {
+                for (int next : transitions.get(currentState).get('e')) {
+                    if (recognizeRecursive(next, word, index, visited)) return true;
+                }
+            }
+            return false;
+        }
+
+        char symbol = word.charAt(index);
+        if (transitions.containsKey(currentState) && transitions.get(currentState).containsKey(symbol)) {
+            for (int next : transitions.get(currentState).get(symbol)) {
+                if (recognizeRecursive(next, word, index + 1, visited)) return true;
+            }
+        }
+
+        if (transitions.containsKey(currentState) && transitions.get(currentState).containsKey('e')) {
+            for (int next : transitions.get(currentState).get('e')) {
+                if (recognizeRecursive(next, word, index, visited)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void print() {
+        System.out.println("Automatic  ID: " + id);
+        System.out.println("Conditions: " + states);
+        System.out.println("Start condition: " + startState);
+        System.out.println("Receiving condition: " + acceptStates);
+        System.out.println("Transitions:");
+        for (Integer from : transitions.keySet()) {
+            Map<Character, Set<Integer>> inner = transitions.get(from);
+            for (Character symbol : inner.keySet()) {
+                for (Integer to : inner.get(symbol)) {
+                    System.out.println(from + " --" + symbol + "--> " + to);
+                }
+            }
+        }
+    }
+
+    public Set<Integer> getStates() { return states; }
+    public int getStartState() { return startState; }
+    public Set<Integer> getAcceptStates() { return acceptStates; }
+    public Map<Integer, Map<Character, Set<Integer>>> getTransitions() { return transitions; }
+    public String getId() { return id; }
+}
 
 
 
@@ -77,7 +156,80 @@ public class NFAOperations {
         for (int a : a2.getAcceptStates()) result.addAcceptState(a + offset);
 
         return result;
+    } public static NFA concat(NFA a1, NFA a2, String newId) {
+        NFA result = new NFA(newId);
+        int offset = Collections.max(a1.getStates()) + 1;
+
+        for (int s : a1.getStates()) result.addState(s);
+        for (int s : a2.getStates()) result.addState(s + offset);
+
+        Map<Integer, Map<Character, Set<Integer>>> t1 = a1.getTransitions();
+        Map<Integer, Map<Character, Set<Integer>>> t2 = a2.getTransitions();
+
+        for (Integer from : t1.keySet()) {
+            for (Character symbol : t1.get(from).keySet()) {
+                for (Integer to : t1.get(from).get(symbol)) {
+                    result.addTransition(from, symbol, to);
+                }
+            }
+        }
+
+        for (Integer from : t2.keySet()) {
+            for (Character symbol : t2.get(from).keySet()) {
+                for (Integer to : t2.get(from).get(symbol)) {
+                    result.addTransition(from + offset, symbol, to + offset);
+                }
+            }
+        }
+
+        for (int a : a1.getAcceptStates()) {
+            result.addTransition(a, 'e', a2.getStartState() + offset);
+        }
+
+        result.setStartState(a1.getStartState());
+        for (int a : a2.getAcceptStates()) result.addAcceptState(a + offset);
+
+        return result;
     }
+
+    public static NFA kleeneStar(NFA base, String newId) {
+        NFA result = new NFA(newId);
+        int offset = Collections.max(base.getStates()) + 1;
+
+        for (int s : base.getStates()) result.addState(s);
+        Map<Integer, Map<Character, Set<Integer>>> t = base.getTransitions();
+        for (Integer from : t.keySet()) {
+            for (Character symbol : t.get(from).keySet()) {
+                for (Integer to : t.get(from).get(symbol)) {
+                    result.addTransition(from, symbol, to);
+                }
+            }
+        }
+
+        int newStart = offset + 1;
+        result.addState(newStart);
+        result.setStartState(newStart);
+        result.addAcceptState(newStart);
+        result.addTransition(newStart, 'e', base.getStartState());
+
+        for (int a : base.getAcceptStates()) {
+            result.addAcceptState(a);
+            result.addTransition(a, 'e', newStart);
+        }
+
+        return result;
+    }
+
+    public static NFA fromRegex(String regex, String newId) {
+        NFA result = new NFA(newId);
+        result.setStartState(0);
+        result.addAcceptState(1);
+        for (int i = 0; i < regex.length(); i++) {
+            result.addTransition(0, regex.charAt(i), 1);
+        }
+        return result;
+    }
+}
 
 
 
@@ -166,6 +318,60 @@ public class CommandHandler {
 
             String[] tokens = input.split(" ");
             String command = tokens[0];
+            try {
+                if (command.equals("exit")) {
+                    System.out.println("Exiting...");
+                    break;
+                } else if (command.equals("list")) {
+                    for (String id : automata.keySet()) {
+                        System.out.println(id);
+                    }
+                } else if (command.equals("print")) {
+                    NFA nfa = automata.get(tokens[1]);
+                    nfa.print();
+                } else if (command.equals("recognize")) {
+                    NFA nfa = automata.get(tokens[1]);
+                    String word = tokens[2];
+                    System.out.println(nfa.recognize(word) ? "Receive" : "Not receiving");
+                } else if (command.equals("empty")) {
+                    NFA nfa = automata.get(tokens[1]);
+                    System.out.println(nfa.isEmpty() ? "Empty language" : "Not empty language");
+                } else if (command.equals("deterministic")) {
+                    NFA nfa = automata.get(tokens[1]);
+                    System.out.println(nfa.isDeterministic() ? "Determined" : "Indeterminate");
+                } else if (command.equals("save")) {
+                    NFAFileManager.saveToFile(automata.get(tokens[1]), tokens[2]);
+                    System.out.println("Saved successfully.");
+                } else if (command.equals("open")) {
+                    NFA loaded = NFAFileManager.loadFromFile(tokens[1]);
+                    automata.put(loaded.getId(), loaded);
+                    System.out.println("Loaded successfully.");
+                } else if (command.equals("union")) {
+                    NFA result = NFAOperations.union(automata.get(tokens[1]), automata.get(tokens[2]), tokens[3]);
+                    automata.put(tokens[3], result);
+                    System.out.println("New automat created  (union).");
+                } else if (command.equals("concat")) {
+                    NFA result = NFAOperations.concat(automata.get(tokens[1]), automata.get(tokens[2]), tokens[3]);
+                    automata.put(tokens[3], result);
+                    System.out.println("New automat created  (concat).");
+                } else if (command.equals("un")) {
+                    NFA result = NFAOperations.kleeneStar(automata.get(tokens[1]), tokens[2]);
+                    automata.put(tokens[2], result);
+                    System.out.println("New automat created  (Wedge-star).");
+                } else if (command.equals("reg")) {
+                    NFA result = NFAOperations.fromRegex(tokens[1], tokens[2]);
+                    automata.put(tokens[2], result);
+                    System.out.println("New regular expression automaton created.");
+                } else {
+                    System.out.println("Invalid command.");
+                }
+            } catch (Exception e) {
+                System.out.println("⚠ Error: " + e.getMessage());
+            }
+        }
+    }
+}
+
 
 
 
