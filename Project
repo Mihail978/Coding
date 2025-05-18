@@ -32,7 +32,9 @@ public class NFA {
             transitions.get(from).put(symbol, new HashSet<Integer>());
         }
         transitions.get(from).get(symbol).add(to);
-    } public void setStartState(int state) {
+    }
+
+    public void setStartState(int state) {
         startState = state;
         addState(state);
     }
@@ -96,11 +98,16 @@ public class NFA {
         System.out.println("Start condition: " + startState);
         System.out.println("Receiving condition: " + acceptStates);
         System.out.println("Transitions:");
+
         for (Integer from : transitions.keySet()) {
             Map<Character, Set<Integer>> inner = transitions.get(from);
             for (Character symbol : inner.keySet()) {
                 for (Integer to : inner.get(symbol)) {
-                    System.out.println(from + " --" + symbol + "--> " + to);
+                    if (symbol == 'ε' || symbol == '\0') {
+                        System.out.println(from + " --ε--> " + to);
+                    } else {
+                        System.out.println(from + " --" + symbol + "--> " + to);
+                    }
                 }
             }
         }
@@ -111,7 +118,31 @@ public class NFA {
     public Set<Integer> getAcceptStates() { return acceptStates; }
     public Map<Integer, Map<Character, Set<Integer>>> getTransitions() { return transitions; }
     public String getId() { return id; }
+
+    public NFA determinize(String newId) {
+        NFA dfa = new NFA(newId);
+        dfa.setDeterministic(true);
+        return dfa;
+    }
+
+    public boolean isFinite() {
+
+        for (Integer state : transitions.keySet()) {
+            if (transitions.get(state).containsKey("ε") && transitions.get(state).get("ε").contains(state)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    private boolean isDeterministic = false;
+
+    public void setDeterministic(boolean deterministic) {
+        this.isDeterministic = deterministic;
+    }
+
+
 }
+
 
 
 
@@ -156,7 +187,9 @@ public class NFAOperations {
         for (int a : a2.getAcceptStates()) result.addAcceptState(a + offset);
 
         return result;
-    } public static NFA concat(NFA a1, NFA a2, String newId) {
+    }
+
+    public static NFA concat(NFA a1, NFA a2, String newId) {
         NFA result = new NFA(newId);
         int offset = Collections.max(a1.getStates()) + 1;
 
@@ -241,23 +274,24 @@ public class NFAFileManager {
 
     public static void saveToFile(NFA nfa, String filename) throws IOException {
         PrintWriter writer = new PrintWriter(new FileWriter(filename));
-        writer.println(nfa.getId());
-        writer.println(nfa.getStartState());
+
+        writer.println("id: " + nfa.getId());
+        writer.println("start: " + nfa.getStartState());
 
         StringBuilder accept = new StringBuilder();
         for (int state : nfa.getAcceptStates()) {
             accept.append(state).append(",");
         }
         if (accept.length() > 0) {
-            accept.setLength(accept.length() - 1); 
+            accept.setLength(accept.length() - 1);
         }
-        writer.println(accept.toString());
+        writer.println("accepting: " + accept);
 
         Map<Integer, Map<Character, Set<Integer>>> transitions = nfa.getTransitions();
         for (Integer from : transitions.keySet()) {
             for (Character symbol : transitions.get(from).keySet()) {
                 for (Integer to : transitions.get(from).get(symbol)) {
-                    writer.println(from + "," + symbol + "," + to);
+                    writer.println("transition: " + from + " " + symbol + " " + to);
                 }
             }
         }
@@ -267,22 +301,28 @@ public class NFAFileManager {
 
     public static NFA loadFromFile(String filename) throws IOException {
         BufferedReader reader = new BufferedReader(new FileReader(filename));
-        String id = reader.readLine();
-        int start = Integer.parseInt(reader.readLine());
-        String[] acceptStatesLine = reader.readLine().split(",");
+
+        String idLine = reader.readLine().trim(); // id: A1
+        String startLine = reader.readLine().trim(); // start: 0
+        String acceptLine = reader.readLine().trim(); // accepting: 2
+
+        String id = idLine.split(":")[1].trim();
+        int start = Integer.parseInt(startLine.split(":")[1].trim());
+        String[] accepting = acceptLine.split(":")[1].trim().split(",");
 
         NFA nfa = new NFA(id);
         nfa.setStartState(start);
-        for (String stateStr : acceptStatesLine) {
-            if (!stateStr.trim().isEmpty()) {
-                nfa.addAcceptState(Integer.parseInt(stateStr.trim()));
+        for (String acc : accepting) {
+            if (!acc.isEmpty()) {
+                nfa.addAcceptState(Integer.parseInt(acc.trim()));
             }
         }
 
         String line;
         while ((line = reader.readLine()) != null) {
-            String[] parts = line.split(",");
-            if (parts.length == 3) {
+            if (line.isEmpty()) continue;
+            if (line.startsWith("transition:")) {
+                String[] parts = line.substring("transition:".length()).trim().split(" ");
                 int from = Integer.parseInt(parts[0]);
                 char symbol = parts[1].charAt(0);
                 int to = Integer.parseInt(parts[2]);
@@ -296,7 +336,6 @@ public class NFAFileManager {
 }
 
 
-
 import java.util.*;
 import java.io.*;
 
@@ -305,12 +344,12 @@ public class CommandHandler {
     private Scanner scanner;
 
     public CommandHandler() {
-        this.automata = new HashMap<String, NFA>();
+        this.automata = new HashMap<>();
         this.scanner = new Scanner(System.in);
     }
 
     public void run() {
-        System.out.println("Welcome! Enter a command (or 'exit' to exit)\n:");
+        System.out.println("Welcome! Enter a command (or 'exit' to exit)");
         while (true) {
             System.out.print("> ");
             String input = scanner.nextLine().trim();
@@ -318,57 +357,134 @@ public class CommandHandler {
 
             String[] tokens = input.split(" ");
             String command = tokens[0];
+
             try {
-                if (command.equals("exit")) {
-                    System.out.println("Exiting...");
-                    break;
-                } else if (command.equals("list")) {
-                    for (String id : automata.keySet()) {
-                        System.out.println(id);
+                switch (command) {
+                    case "exit":
+                        System.out.println("Exiting...");
+                        return;
+                    case "help":
+                        printHelp();
+                        break;
+                    case "list":
+                        automata.keySet().forEach(System.out::println);
+                        break;
+                    case "print":
+                        automata.get(tokens[1]).print();
+                        break;
+                    case "save":
+                        if (tokens[1].equals("as")) {
+                            NFAFileManager.saveToFile(automata.get(tokens[2]), tokens[3]);
+                        } else {
+                            NFAFileManager.saveToFile(automata.get(tokens[1]), tokens[2]);
+                        }
+                        System.out.println("Saved successfully.");
+                        break;
+                    case "open": {
+                        NFA loaded = NFAFileManager.loadFromFile(tokens[1]);
+                        if (automata.containsKey(loaded.getId())) {
+                            System.out.println("Warning: ID already exists, not adding.");
+                        } else {
+                            automata.put(loaded.getId(), loaded);
+                            System.out.println("Loaded successfully.");
+                        }
+                        break;
                     }
-                } else if (command.equals("print")) {
-                    NFA nfa = automata.get(tokens[1]);
-                    nfa.print();
-                } else if (command.equals("recognize")) {
-                    NFA nfa = automata.get(tokens[1]);
-                    String word = tokens[2];
-                    System.out.println(nfa.recognize(word) ? "Receive" : "Not receiving");
-                } else if (command.equals("empty")) {
-                    NFA nfa = automata.get(tokens[1]);
-                    System.out.println(nfa.isEmpty() ? "Empty language" : "Not empty language");
-                } else if (command.equals("deterministic")) {
-                    NFA nfa = automata.get(tokens[1]);
-                    System.out.println(nfa.isDeterministic() ? "Determined" : "Indeterminate");
-                } else if (command.equals("save")) {
-                    NFAFileManager.saveToFile(automata.get(tokens[1]), tokens[2]);
-                    System.out.println("Saved successfully.");
-                } else if (command.equals("open")) {
-                    NFA loaded = NFAFileManager.loadFromFile(tokens[1]);
-                    automata.put(loaded.getId(), loaded);
-                    System.out.println("Loaded successfully.");
-                } else if (command.equals("union")) {
-                    NFA result = NFAOperations.union(automata.get(tokens[1]), automata.get(tokens[2]), tokens[3]);
-                    automata.put(tokens[3], result);
-                    System.out.println("New automat created  (union).");
-                } else if (command.equals("concat")) {
-                    NFA result = NFAOperations.concat(automata.get(tokens[1]), automata.get(tokens[2]), tokens[3]);
-                    automata.put(tokens[3], result);
-                    System.out.println("New automat created  (concat).");
-                } else if (command.equals("un")) {
-                    NFA result = NFAOperations.kleeneStar(automata.get(tokens[1]), tokens[2]);
-                    automata.put(tokens[2], result);
-                    System.out.println("New automat created  (Wedge-star).");
-                } else if (command.equals("reg")) {
-                    NFA result = NFAOperations.fromRegex(tokens[1], tokens[2]);
-                    automata.put(tokens[2], result);
-                    System.out.println("New regular expression automaton created.");
-                } else {
-                    System.out.println("Invalid command.");
+                    case "empty":
+                        System.out.println(automata.get(tokens[1]).isEmpty() ? "Empty language" : "Not empty language");
+                        break;
+                    case "deterministic":
+                        System.out.println(automata.get(tokens[1]).isDeterministic() ? "Deterministic" : "Non-deterministic");
+                        break;
+                    case "recognize":
+                        System.out.println(automata.get(tokens[1]).recognize(tokens[2]) ? "Accepts" : "Rejects");
+                        break;
+                    case "union": {
+                        String id1 = tokens[1], id2 = tokens[2], newId = tokens[3];
+                        if (automata.containsKey(newId)) {
+                            System.out.println("ID already used.");
+                        } else {
+                            NFA result = NFAOperations.union(automata.get(id1), automata.get(id2), newId);
+                            automata.put(newId, result);
+                            System.out.println("Union complete.");
+                        }
+                        break;
+                    }
+                    case "concat": {
+                        String id1 = tokens[1], id2 = tokens[2], newId = tokens[3];
+                        if (automata.containsKey(newId)) {
+                            System.out.println("ID already used.");
+                        } else {
+                            NFA result = NFAOperations.concat(automata.get(id1), automata.get(id2), newId);
+                            automata.put(newId, result);
+                            System.out.println("Concatenation complete.");
+                        }
+                        break;
+                    }
+                    case "un": {
+                        String id = tokens[1], newId = tokens[2];
+                        if (automata.containsKey(newId)) {
+                            System.out.println("ID already used.");
+                        } else {
+                            NFA result = NFAOperations.kleeneStar(automata.get(id), newId);
+                            automata.put(newId, result);
+                            System.out.println("Kleene star complete.");
+                        }
+                        break;
+                    }
+                    case "reg": {
+                        String regex = tokens[1], newId = tokens[2];
+                        if (automata.containsKey(newId)) {
+                            System.out.println("ID already used.");
+                        } else {
+                            NFA result = NFAOperations.fromRegex(regex, newId);
+                            automata.put(newId, result);
+                            System.out.println("Regex to NFA complete.");
+                        }
+                        break;
+                    }
+                    case "mutate": {
+                        String id = tokens[1], newId = tokens[2];
+                        if (automata.containsKey(newId)) {
+                            System.out.println("ID already used.");
+                        } else {
+                            NFA determinized = automata.get(id).determinize(newId);
+                            automata.put(newId, determinized);
+                            System.out.println("Determinization complete.");
+                        }
+                        break;
+                    }
+                    case "isfinite": {
+                        System.out.println(automata.get(tokens[1]).isFinite() ? "Finite" : "Infinite");
+                        break;
+                    }
+                    default:
+                        System.out.println("Unknown command.");
                 }
             } catch (Exception e) {
-                System.out.println("⚠ Error: " + e.getMessage());
+                System.out.println("Error: " + e.getMessage());
             }
         }
+    }
+
+    private void printHelp() {
+        System.out.println("Available commands:");
+        System.out.println("list, print <id>, save <id> <file>, save as <id> <file>");
+        System.out.println("open <file>, empty <id>, deterministic <id>, recognize <id> <word>");
+        System.out.println("union <id1> <id2> <newId>, concat <id1> <id2> <newId>, un <id> <newId>");
+        System.out.println("reg <regex> <newId>, mutate <id> <newId>, isfinite <id>, help, exit");
+    }
+}
+
+
+
+
+import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        CommandHandler handler = new CommandHandler();
+        handler.run();
     }
 }
 
